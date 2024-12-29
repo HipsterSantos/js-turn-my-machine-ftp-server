@@ -1,12 +1,17 @@
 {
   "name": "js-ftp-server",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "",
   "main": "index.js",
   "scripts": {
     "test": "node tests/ftpServer.test.js"
   },
-  "keywords": ["ftp", "server", "library", "RFC 959"],
+  "keywords": [
+    "ftp",
+    "server",
+    "library",
+    "RFC 959"
+  ],
   "author": "Santos Campos (HipsterSantos)",
   "license": "MIT"
 }
