@@ -9,12 +9,12 @@ A lightweight FTP server library built from scratch. Fully compliant with RFC 95
 
 ## Installation
 ```bash
-npm install my-ftp-library
+npm install js-ftp-server
 ```
 
 ## Usage
 ```js
-const { FTPServer } = require('my-ftp-library');
+const { FTPServer } = require('js-ftp-server');
 
 const server = new FTPServer({ port: 2121 });
 server.start();
