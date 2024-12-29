@@ -21,27 +21,36 @@ class FTPServer {
     let currentDir = this.rootDir;
 
     socket.on('data', (data) => {
-      const command = data.toString().trim();
-      console.log(`Command received: ${command}`);
+        const command = data.toString().trim();
+        console.log(`Command received: ${command}`);
 
-      if (command.startsWith('USER')) {
-        socket.write('331 User name okay, need password\r\n');
-      } else if (command.startsWith('PASS')) {
-        socket.write('230 User logged in, proceed\r\n');
-      } else if (command.startsWith('PWD')) {
-        socket.write(`257 "${currentDir}" is the current directory\r\n`);
-      } else if (command.startsWith('LIST')) {
-        const files = fs.readdirSync(currentDir).join('\r\n');
-        socket.write('150 Here comes the directory listing\r\n');
-        socket.write(files + '\r\n226 Directory send okay\r\n');
-      } else if (command.startsWith('QUIT')) {
-        socket.write('221 Goodbye\r\n');
-        socket.end();
-      } else {
-        socket.write('502 Command not implemented\r\n');
-      }
+        if (command.startsWith('USER')) {
+            socket.write('331 User name okay, need password\r\n');
+        } else if (command.startsWith('PASS')) {
+            socket.write('230 User logged in, proceed\r\n');
+        } else if (command.startsWith('PWD')) {
+            socket.write(`257 "${currentDir}" is the current directory\r\n`);
+        } else if (command.startsWith('LIST')) {
+            const files = fs.readdirSync(currentDir).join('\r\n');
+            socket.write('150 Here comes the directory listing\r\n');
+            socket.write(files + '\r\n226 Directory send okay\r\n');
+        } else if (command.startsWith('QUIT')) {
+            socket.write('221 Leaving Goodbye\r\n');
+            socket.end();
+        } else {
+            socket.write('502 Command not implemented\r\n');
+        }
     });
-  }
+
+    socket.on('error', (err) => {
+        console.error(`Socket error: ${err.message}`);
+    });
+
+    socket.on('end', () => {
+        console.log('Client disconnected.');
+    });
+}
+
 }
 
 module.exports = FTPServer;

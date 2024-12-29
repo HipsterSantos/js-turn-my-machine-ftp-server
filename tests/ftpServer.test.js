@@ -4,10 +4,10 @@ const assert = require('assert');
 
 // Example test: check server start
 (async () => {
-  const server = new FTPServer({ port: 2121 });
+  const server = new FTPServer({ port: 5121 });
   server.start();
 
-  const client = net.createConnection({ port: 2121 }, () => {
+  const client = net.createConnection({ port: 5121 }, () => {
     console.log('Connected to server');
     client.end();
     server.server.close();
