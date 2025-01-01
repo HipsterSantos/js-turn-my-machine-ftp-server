@@ -1,6 +1,6 @@
 {
   "name": "ftp-library",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "A lightweight Node.js FTP server library built from scratch. Fully compliant with RFC 959, it supports custom configurations, directory listings, authentication, and more. Perfect for developers needing a robust FTP server for testing, development, or lightweight production use.",
   "main": "src/index.js",
   "scripts": {
@@ -14,7 +14,14 @@
     "url": "https://github.com/HipsterSantos/js-turn-my-machine-ftp-server/issues"
   },
   "homepage": "https://github.com/HipsterSantos/js-turn-my-machine-ftp-server#readme",
-  "keywords": ["ftp", "server", "library", "RFC 959", "nodejs", "custom server"],
+  "keywords": [
+    "ftp",
+    "server",
+    "library",
+    "RFC 959",
+    "nodejs",
+    "custom server"
+  ],
   "author": "Hipster Santos",
   "license": "MIT",
   "devDependencies": {},
