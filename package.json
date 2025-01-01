@@ -1,5 +1,5 @@
 {
-  "name": "js-ftp-library",
+  "name": "js-ftp-server",
   "version": "1.0.4",
   "description": "A lightweight Node.js FTP server library built from scratch. Fully compliant with RFC 959, it supports custom configurations, directory listings, authentication, and more. Perfect for developers needing a robust FTP server for testing, development, or lightweight production use.",
   "main": "src/index.js",
