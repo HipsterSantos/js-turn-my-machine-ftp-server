@@ -1,301 +1,122 @@
-# FTP Library
-
-A lightweight FTP server library for Node.js. Fully compliant with RFC 959, this library is designed to be fast, reliable, and customizable. It is ideal for developers needing an FTP server for development, testing, or lightweight production use.
-
-## Features
-- Simple API for creating FTP servers.
-- Customizable port, host, and root directory settings.
-- Built-in authentication and directory listing support.
-- Lightweight, fast, and easy to extend.
-
-## Installation
-```bash
-npm install js-ftp-server
-```
-
-## Usage
-```js
-const { FTPServer } = require('js-ftp-server');
-
-const server = new FTPServer({ port: 2121 });
-server.start();
-```
-
-## Examples
-
-### **1. Basic Server Setup**
-```javascript
-const { FTPServer } = require('ftp-library');
-
-const server = new FTPServer({ port: 2121 });
-server.start();
-```
-
----
-
-### **2. Custom Port and Host**
-```javascript
-const { FTPServer } = require('ftp-library');
-
-const server = new FTPServer({ port: 2121, host: '127.0.0.1' });
-server.start();
-```
-
----
-
-### **3. Anonymous Access**
-```javascript
-const { FTPServer } = require('ftp-library');
-
-const server = new FTPServer({ allowAnonymous: true });
-server.start();
-```
-
----
-
-### **4. Custom Root Directory**
-```javascript
-const { FTPServer } = require('ftp-library');
-
-const server = new FTPServer({ rootDir: '/var/ftp' });
-server.start();
-```
-
----
-
-### **5. User Authentication**
-```javascript
-const { FTPServer } = require('ftp-library');
-const { validateCredentials } = require('./src/utils');
-
-const server = new FTPServer();
-
-server.handleConnection = (socket) => {
-  socket.write('220 Welcome to the custom FTP server\r\n');
-  socket.on('data', (data) => {
-    const command = data.toString().trim();
-    if (command.startsWith('USER admin') && validateCredentials('admin', 'password')) {
-      socket.write('230 User logged in, proceed\r\n');
-    } else {
-      socket.write('530 Login incorrect\r\n');
-    }
-  });
-};
-
-server.start();
-```
-
----
-
-### **6. File Upload**
-```javascript
-const { FTPServer } = require('ftp-library');
-const fs = require('fs');
+const net = require('net');
+const fs = require('fs').promises;
 const path = require('path');
+const EventEmitter = require('events');
 
-const server = new FTPServer();
+class FTPServer extends EventEmitter {
+  constructor({ host = '0.0.0.0', port = 21, rootDir = process.cwd(), welcomeMessage = '220 Welcome to the FTP server' } = {}) {
+    super();
+    this.host = host;
+    this.port = port;
+    this.rootDir = rootDir;
+    this.welcomeMessage = welcomeMessage;
+    this.server = net.createServer(this.handleConnection.bind(this));
+  }
 
-server.handleConnection = (socket) => {
-  socket.on('data', (data) => {
-    const command = data.toString().trim();
-    if (command.startsWith('STOR')) {
-      const fileName = command.split(' ')[1];
-      const writeStream = fs.createWriteStream(path.join(server.rootDir, fileName));
-      socket.pipe(writeStream);
-      socket.write('226 Transfer complete\r\n');
-    }
-  });
-};
+  start() {
+    this.server.listen(this.port, this.host, () => {
+      console.log(`FTP server started on ${this.host}:${this.port}`);
+      this.emit('server:start', { host: this.host, port: this.port });
+    });
+  }
 
-server.start();
-```
+  async handleConnection(socket) {
+    socket.write(`${this.welcomeMessage}\r\n`);
+    let currentDir = this.rootDir;
 
----
+    socket.on('data', async (data) => {
+      const command = data.toString().trim();
+      const [cmd, ...args] = command.split(' ');
+      console.log(`Command received: ${command}`);
+      this.emit('command:received', { command });
 
-### **7. File Download**
-```javascript
-const { FTPServer } = require('ftp-library');
-const fs = require('fs');
-const path = require('path');
+      try {
+        switch (cmd.toUpperCase()) {
+          case 'USER':
+            socket.write('331 User name okay, need password\r\n');
+            break;
 
-const server = new FTPServer();
+          case 'PASS':
+            socket.write('230 User logged in, proceed\r\n');
+            break;
 
-server.handleConnection = (socket) => {
-  socket.on('data', (data) => {
-    const command = data.toString().trim();
-    if (command.startsWith('RETR')) {
-      const fileName = command.split(' ')[1];
-      const readStream = fs.createReadStream(path.join(server.rootDir, fileName));
-      readStream.pipe(socket);
-      socket.write('226 Transfer complete\r\n');
-    }
-  });
-};
+          case 'PWD':
+            socket.write(`257 "${currentDir}" is the current directory\r\n`);
+            break;
 
-server.start();
-```
+          case 'LIST':
+            try {
+              const files = await fs.readdir(currentDir);
+              socket.write('150 Here comes the directory listing\r\n');
+              socket.write(files.join('\r\n') + '\r\n226 Directory send okay\r\n');
+            } catch (err) {
+              socket.write('450 Requested file action not taken\r\n');
+            }
+            break;
 
----
+          case 'CWD':
+            const newDir = path.join(currentDir, args.join(' '));
+            try {
+              await fs.access(newDir);
+              currentDir = newDir;
+              socket.write(`250 Directory successfully changed to ${currentDir}\r\n`);
+            } catch (err) {
+              socket.write('550 Failed to change directory\r\n');
+            }
+            break;
 
-### **8. Passive Mode Support**
-```javascript
-const { FTPServer } = require('ftp-library');
+          case 'MKD':
+            try {
+              const dirToCreate = path.join(currentDir, args.join(' '));
+              await fs.mkdir(dirToCreate);
+              socket.write(`257 "${dirToCreate}" directory created\r\n`);
+            } catch (err) {
+              socket.write('550 Failed to create directory\r\n');
+            }
+            break;
 
-const server = new FTPServer();
+          case 'RMD':
+            try {
+              const dirToRemove = path.join(currentDir, args.join(' '));
+              await fs.rmdir(dirToRemove);
+              socket.write(`250 Directory "${dirToRemove}" removed\r\n`);
+            } catch (err) {
+              socket.write('550 Failed to remove directory\r\n');
+            }
+            break;
 
-server.handleConnection = (socket) => {
-  socket.on('data', (data) => {
-    const command = data.toString().trim();
-    if (command.startsWith('PASV')) {
-      socket.write('227 Entering Passive Mode (127,0,0,1,192,168)\r\n');
-    }
-  });
-};
+          case 'QUIT':
+            socket.write('221 Goodbye\r\n');
+            socket.end();
+            break;
 
-server.start();
-```
+          case 'STAT':
+            socket.write('211 FTP server status OK\r\n');
+            break;
 
----
+          case 'HELP':
+            socket.write('214 Supported commands: USER, PASS, PWD, LIST, CWD, MKD, RMD, QUIT, STAT, HELP\r\n');
+            break;
 
-### **9. Logging Commands**
-```javascript
-const { FTPServer } = require('ftp-library');
+          default:
+            socket.write('502 Command not implemented\r\n');
+        }
+      } catch (error) {
+        console.error(`Error processing command: ${error.message}`);
+        socket.write('550 Internal server error\r\n');
+      }
+    });
 
-const server = new FTPServer();
+    socket.on('error', (err) => {
+      console.error(`Socket error: ${err.message}`);
+      this.emit('connection:error', { error: err });
+    });
 
-server.handleConnection = (socket) => {
-  socket.on('data', (data) => {
-    console.log(`Command received: ${data.toString().trim()}`);
-    socket.write('502 Command not implemented\r\n');
-  });
-};
+    socket.on('end', () => {
+      console.log('Client disconnected.');
+      this.emit('connection:close');
+    });
+  }
+}
 
-server.start();
-```
-
----
-
-### **10. Configurable Welcome Message**
-```javascript
-const { FTPServer } = require('ftp-library');
-
-const server = new FTPServer();
-
-server.handleConnection = (socket) => {
-  socket.write('220 Welcome to My Custom FTP Server\r\n');
-};
-
-server.start();
-```
-
----
-
-### **11. Multiple Connections**
-```javascript
-const { FTPServer } = require('ftp-library');
-
-const server = new FTPServer();
-
-server.handleConnection = (socket) => {
-  console.log('New connection established');
-  socket.write('220 Ready\r\n');
-};
-
-server.start();
-```
-
----
-
-### **12. Rename File**
-```javascript
-const { FTPServer } = require('ftp-library');
-const fs = require('fs');
-
-const server = new FTPServer();
-
-server.handleConnection = (socket) => {
-  socket.on('data', (data) => {
-    const command = data.toString().trim();
-    if (command.startsWith('RNFR')) {
-      const oldName = command.split(' ')[1];
-      socket.once('data', (newData) => {
-        const newName = newData.toString().trim().split(' ')[1];
-        fs.renameSync(oldName, newName);
-        socket.write('250 File renamed\r\n');
-      });
-    }
-  });
-};
-
-server.start();
-```
-
----
-
-### **13. Delete File**
-```javascript
-const { FTPServer } = require('ftp-library');
-const fs = require('fs');
-
-const server = new FTPServer();
-
-server.handleConnection = (socket) => {
-  socket.on('data', (data) => {
-    const command = data.toString().trim();
-    if (command.startsWith('DELE')) {
-      const fileName = command.split(' ')[1];
-      fs.unlinkSync(fileName);
-      socket.write('250 File deleted\r\n');
-    }
-  });
-};
-
-server.start();
-```
-
----
-
-### **14. Custom Command Implementation**
-```javascript
-const { FTPServer } = require('ftp-library');
-
-const server = new FTPServer();
-
-server.handleConnection = (socket) => {
-  socket.on('data', (data) => {
-    const command = data.toString().trim();
-    if (command === 'MYCMD') {
-      socket.write('200 Custom command executed\r\n');
-    }
-  });
-};
-
-server.start();
-```
-
----
-
-### **15. Advanced Logging**
-```javascript
-const { FTPServer } = require('ftp-library');
-const fs = require('fs');
-
-const logStream = fs.createWriteStream('./ftp-commands.log', { flags: 'a' });
-
-const server = new FTPServer();
-
-server.handleConnection = (socket) => {
-  socket.on('data', (data) => {
-    const command = data.toString().trim();
-    logStream.write(`${new Date().toISOString()} - ${command}\n`);
-    socket.write('502 Command not implemented\r\n');
-  });
-};
-
-server.start();
-```
-
----
-
-## License
-MIT
+module.exports = FTPServer;
