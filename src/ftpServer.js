@@ -1,56 +1,122 @@
 const net = require('net');
-const fs = require('fs');
+const fs = require('fs').promises;
 const path = require('path');
+const EventEmitter = require('events');
 
-class FTPServer {
-  constructor({ host = '0.0.0.0', port = 21, rootDir = process.cwd() } = {}) {
+class FTPServer extends EventEmitter {
+  constructor({ host = '0.0.0.0', port = 21, rootDir = process.cwd(), welcomeMessage = '220 Welcome to the FTP server' } = {}) {
+    super();
     this.host = host;
     this.port = port;
     this.rootDir = rootDir;
+    this.welcomeMessage = welcomeMessage;
     this.server = net.createServer(this.handleConnection.bind(this));
   }
 
   start() {
     this.server.listen(this.port, this.host, () => {
       console.log(`FTP server started on ${this.host}:${this.port}`);
+      this.emit('server:start', { host: this.host, port: this.port });
     });
   }
 
-  handleConnection(socket) {
-    socket.write('220 Welcome to the custom FTP server\r\n');
+  async handleConnection(socket) {
+    socket.write(`${this.welcomeMessage}\r\n`);
     let currentDir = this.rootDir;
 
-    socket.on('data', (data) => {
-        const command = data.toString().trim();
-        console.log(`Command received: ${command}`);
+    socket.on('data', async (data) => {
+      const command = data.toString().trim();
+      const [cmd, ...args] = command.split(' ');
+      console.log(`Command received: ${command}`);
+      this.emit('command:received', { command });
 
-        if (command.startsWith('USER')) {
+      try {
+        switch (cmd.toUpperCase()) {
+          case 'USER':
             socket.write('331 User name okay, need password\r\n');
-        } else if (command.startsWith('PASS')) {
+            break;
+
+          case 'PASS':
             socket.write('230 User logged in, proceed\r\n');
-        } else if (command.startsWith('PWD')) {
+            break;
+
+          case 'PWD':
             socket.write(`257 "${currentDir}" is the current directory\r\n`);
-        } else if (command.startsWith('LIST')) {
-            const files = fs.readdirSync(currentDir).join('\r\n');
-            socket.write('150 Here comes the directory listing\r\n');
-            socket.write(files + '\r\n226 Directory send okay\r\n');
-        } else if (command.startsWith('QUIT')) {
-            socket.write('221 Leaving Goodbye\r\n');
+            break;
+
+          case 'LIST':
+            try {
+              const files = await fs.readdir(currentDir);
+              socket.write('150 Here comes the directory listing\r\n');
+              socket.write(files.join('\r\n') + '\r\n226 Directory send okay\r\n');
+            } catch (err) {
+              socket.write('450 Requested file action not taken\r\n');
+            }
+            break;
+
+          case 'CWD':
+            const newDir = path.join(currentDir, args.join(' '));
+            try {
+              await fs.access(newDir);
+              currentDir = newDir;
+              socket.write(`250 Directory successfully changed to ${currentDir}\r\n`);
+            } catch (err) {
+              socket.write('550 Failed to change directory\r\n');
+            }
+            break;
+
+          case 'MKD':
+            try {
+              const dirToCreate = path.join(currentDir, args.join(' '));
+              await fs.mkdir(dirToCreate);
+              socket.write(`257 "${dirToCreate}" directory created\r\n`);
+            } catch (err) {
+              socket.write('550 Failed to create directory\r\n');
+            }
+            break;
+
+          case 'RMD':
+            try {
+              const dirToRemove = path.join(currentDir, args.join(' '));
+              await fs.rmdir(dirToRemove);
+              socket.write(`250 Directory "${dirToRemove}" removed\r\n`);
+            } catch (err) {
+              socket.write('550 Failed to remove directory\r\n');
+            }
+            break;
+
+          case 'QUIT':
+            socket.write('221 Goodbye\r\n');
             socket.end();
-        } else {
+            break;
+
+          case 'STAT':
+            socket.write('211 FTP server status OK\r\n');
+            break;
+
+          case 'HELP':
+            socket.write('214 Supported commands: USER, PASS, PWD, LIST, CWD, MKD, RMD, QUIT, STAT, HELP\r\n');
+            break;
+
+          default:
             socket.write('502 Command not implemented\r\n');
         }
+      } catch (error) {
+        console.error(`Error processing command: ${error.message}`);
+        socket.write('550 Internal server error\r\n');
+      }
     });
 
     socket.on('error', (err) => {
-        console.error(`Socket error: ${err.message}`);
+      console.error(`Socket error: ${err.message}`);
+      this.emit('connection:error', { error: err });
     });
 
     socket.on('end', () => {
-        console.log('Client disconnected.');
+      console.log('Client disconnected.');
+      this.emit('connection:close');
     });
-}
-
+  }
 }
 
 module.exports = FTPServer;
